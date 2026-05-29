@@ -1,48 +1,78 @@
 from aqt import mw
-# import the "show info" tool from utils.py
 from aqt.utils import showInfo
-# import all of the Qt GUI library
 from aqt.qt import *
 import aqt
 
 # local
 from . import config
 
-def fieldDialog__init__(self, mw, note, ord=0, parent=None):
-    QDialog.__init__(self, parent or mw) #, Qt.Window)
-    self.mw = aqt.mw
-    self.parent = parent or mw
-    self.note = note
-    self.col = self.mw.col
-    self.mm = self.mw.col.models
-    self.model = note.model()
-    self.mw.checkpoint(_("Fields"))
-    self.form = aqt.forms.fields.Ui_Dialog()
-    self.form.setupUi(self)
 
-    self.markdownCheckbox = QCheckBox("Convert to/from markdown automatically")
-    row = self.form._2.rowCount() + 1
-    self.form._2.addWidget(self.markdownCheckbox, row, 1)
-
-    self.setWindowTitle(_("Fields for %s") % self.model['name'])
-    self.form.buttonBox.button(QDialogButtonBox.Help).setAutoDefault(False)
-    self.form.buttonBox.button(QDialogButtonBox.Close).setAutoDefault(False)
-    self.currentIdx = None
-    self.oldSortField = self.model['sortf']
-    self.fillFields()
-    self.setupSignals()
-    self.form.fieldList.setCurrentRow(0)
-    self.exec_()
+def _inject_markdown_checkbox(dialog):
+    """Safely inject the auto-markdown checkbox into the FieldDialog.
     
-# after
-def fieldDialogLoadField(self, idx):
-    fld = self.model['flds'][self.currentIdx]
-    self.markdownCheckbox.setChecked(fld['perform-auto-markdown'] if 'perform-auto-markdown' in fld else False)
+    This avoids overriding __init__ entirely. Instead, we patch in the
+    checkbox after the dialog's form is set up.
+    """
+    try:
+        dialog.markdownCheckbox = QCheckBox("Convert to/from markdown automatically")
+        
+        # Try to find the form layout and add our checkbox
+        # The form layout is stored as dialog.form._2 in older versions,
+        # but we search more robustly for a QFormLayout or QGridLayout
+        form_layout = None
+        
+        if hasattr(dialog, 'form') and hasattr(dialog.form, '_2'):
+            form_layout = dialog.form._2
+        
+        if form_layout is not None:
+            row = form_layout.rowCount()
+            form_layout.addWidget(dialog.markdownCheckbox, row, 0, 1, 2)
+        else:
+            # Fallback: try to find any layout in the dialog and append
+            layout = dialog.layout()
+            if layout:
+                layout.addWidget(dialog.markdownCheckbox)
+    except Exception as e:
+        # If injection fails, log but don't crash
+        print(f"[Auto Markdown] Warning: could not inject checkbox: {e}")
 
-# after
-def fieldDialogSaveField(self):
+
+def _get_note_type(obj):
+    """Get note type, compatible with old and new API."""
+    if hasattr(obj, 'note_type'):
+        return obj.note_type()
+    if hasattr(obj, 'model'):
+        return obj.model()
+    return None
+
+
+# Called after FieldDialog.loadField
+def fieldDialogLoadField(self, idx):
+    """Load the auto-markdown state for the current field into the checkbox."""
+    if not hasattr(self, 'markdownCheckbox'):
+        return
     if self.currentIdx is None:
         return
-    idx = self.currentIdx
-    fld = self.model['flds'][idx]
-    fld['perform-auto-markdown'] = self.markdownCheckbox.isChecked()
+    
+    try:
+        fld = self.model['flds'][self.currentIdx]
+        checked = fld.get('perform-auto-markdown', False)
+        self.markdownCheckbox.setChecked(checked)
+    except (IndexError, KeyError, TypeError):
+        self.markdownCheckbox.setChecked(False)
+
+
+# Called after FieldDialog.saveField
+def fieldDialogSaveField(self):
+    """Save the auto-markdown checkbox state to the current field."""
+    if not hasattr(self, 'markdownCheckbox'):
+        return
+    if self.currentIdx is None:
+        return
+    
+    try:
+        idx = self.currentIdx
+        fld = self.model['flds'][idx]
+        fld['perform-auto-markdown'] = self.markdownCheckbox.isChecked()
+    except (IndexError, KeyError, TypeError):
+        pass

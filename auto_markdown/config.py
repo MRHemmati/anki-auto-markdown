@@ -1,7 +1,10 @@
 from aqt import mw
 
 def getConfig():
-    return mw.addonManager.getConfig(__name__)
+    # Use the parent package name for config lookup
+    # __name__ here is "auto_markdown.config", but we need "auto_markdown"
+    addon_package = __name__.split(".")[0]
+    return mw.addonManager.getConfig(addon_package)
 
 def shouldShowCodeLineNums():
     return getConfig()['code']['lineNums']
