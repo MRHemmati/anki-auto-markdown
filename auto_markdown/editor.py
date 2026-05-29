@@ -92,6 +92,46 @@ def fieldIsGeneratedHtml(field_html):
             and 'data-original-markdown' in first_tag.attrs)
 
 
+def _html_to_plain_text(html):
+    """Convert HTML to plain text, preserving line breaks.
+    
+    Anki's editor stores line breaks as <br>, <div>, and <p> tags.
+    Simple .get_text() strips them all, collapsing everything into one line.
+    This function converts block-level elements and <br> to newlines first.
+    """
+    if not html:
+        return ""
+    
+    import re
+    
+    # Normalize self-closing <br/> and <br /> variants
+    text = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+    
+    # Add newlines before block-level closing tags
+    text = re.sub(r'</(?:div|p|li|h[1-6]|blockquote|pre|tr)>', '\n', text, flags=re.IGNORECASE)
+    
+    # Add newline before opening block-level tags (for consecutive blocks)
+    text = re.sub(r'<(?:div|p|li|h[1-6]|blockquote|pre|tr)[^>]*>', '\n', text, flags=re.IGNORECASE)
+    
+    # Strip remaining HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Decode common HTML entities
+    text = text.replace('&nbsp;', ' ')
+    text = text.replace('&amp;', '&')
+    text = text.replace('&lt;', '<')
+    text = text.replace('&gt;', '>')
+    text = text.replace('&quot;', '"')
+    
+    # Clean up excessive blank lines (3+ newlines → 2)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Strip leading/trailing whitespace
+    text = text.strip()
+    
+    return text
+
+
 def _get_note_type(note):
     """Get the note type dict, compatible with both old and new Anki API."""
     if hasattr(note, 'note_type'):
@@ -158,8 +198,8 @@ def onMarkdownToggle(editor):
         updated_html = getOriginalTextFromGenerated(field_html)
     else:
         # Convert plain text to markdown HTML
-        # Strip HTML tags to get plain text for markdown processing
-        plain_text = BeautifulSoup(field_html, 'html.parser').get_text()
+        # Properly convert HTML to plain text, preserving line breaks
+        plain_text = _html_to_plain_text(field_html)
         updated_html = generateHtmlFromMarkdown(plain_text, field_html)
 
     note.fields[field_id] = updated_html
@@ -252,8 +292,8 @@ class EditorController(object):
         is_generated = fieldIsGeneratedHtml(field_html)
 
         if config.isAutoMarkdownEnabled() and is_auto and not is_generated:
-            # Get plain text from field and convert to markdown HTML
-            plain_text = BeautifulSoup(field_html, 'html.parser').get_text()
+            # Get plain text from field, preserving line breaks for markdown
+            plain_text = _html_to_plain_text(field_html)
             updated_html = generateHtmlFromMarkdown(plain_text, field_html)
             note.fields[field_idx] = updated_html
             _refresh_editor(self.editor)
