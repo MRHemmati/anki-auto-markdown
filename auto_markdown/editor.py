@@ -16,6 +16,7 @@ from .markdown.extensions.codehilite import CodeHiliteExtension
 from .markdown.extensions.def_list import DefListExtension
 from .markdown.extensions.fenced_code import FencedCodeExtension
 from .markdown.extensions.footnotes import FootnoteExtension
+from .markdown.extensions.nl2br import Nl2BrExtension
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
@@ -40,6 +41,7 @@ def generateHtmlFromMarkdown(field_plain, field_html):
         DefListExtension(),
         FencedCodeExtension(),
         FootnoteExtension(),
+        Nl2BrExtension(),
     ], output_format="html5")
 
     html_tree = BeautifulSoup(generated_html, 'html.parser')
@@ -104,8 +106,8 @@ def _html_to_plain_text(html):
     
     import re
     
-    # Normalize self-closing <br/> and <br /> variants
-    text = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+    # Normalize all <br> variants (including those with attributes like class="...")
+    text = re.sub(r'<br[^>]*/?>|<br>', '\n', html, flags=re.IGNORECASE)
     
     # Add newlines before block-level closing tags
     text = re.sub(r'</(?:div|p|li|h[1-6]|blockquote|pre|tr)>', '\n', text, flags=re.IGNORECASE)
